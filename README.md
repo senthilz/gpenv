@@ -1,31 +1,52 @@
-# gopass-env
+# gpenv
 
 > Load env vars from a single gopass entry into bash, zsh or nushell, with
 > one decrypt instead of one per secret. A tiny Rust CLI with no
 > dependencies, for macOS and Linux.
 
 ```sh
-gopass-env-load work/env      # ~0.3 s: every variable exported into this shell
-gopass-env-unload             # gone again
+gpenv-load work/env      # ~0.3 s: every variable exported into this shell
+gpenv-unload             # gone again
 ```
 
 ## Why
 
 Keeping secrets in gopass and loading them with one `gopass show` per
 variable works, but each lookup is a separate GPG decryption (about 180 ms).
-21 lookups took **about 3.5 s** every time. gopass-env keeps all the variables in
+21 lookups took **about 3.5 s** every time. gpenv keeps all the variables in
 **one** entry, so loading is one decrypt: **about 0.3 s** for 41 variables. The
 same entry works in bash, zsh and nushell, on macOS and Linux.
 
 Details, measurements and the full security model:
 [docs/why-and-security.md](docs/why-and-security.md).
 
+## How is this different from `gopass env`?
+
+gopass has a built-in `gopass env`, and it's easy to think gpenv duplicates
+it. They solve different problems:
+
+| | `gopass env` (built in) | gpenv |
+|---|---|---|
+| Layout | One entry per variable: `work/env/github_token` → `GITHUB_TOKEN` | Many `NAME=value` lines in one entry |
+| Decrypts | One per variable | One for the whole set |
+| Result | Runs **one command** with the variables set | Loads them into **your current shell**, and unloads them again |
+| Names | Entry name, uppercased | Exactly as written; `A,B=value` gives one value several names |
+| Shells | Any (it starts the command itself) | bash, zsh, nushell |
+| Extras | `--file` (secret in a temp file), `--stdin` | Values never shown in errors; any failure loads nothing |
+
+`gopass env` reads only the **first line** of each entry, so it can't use
+gpenv's one-entry format, and gpenv can't read a `gopass env` folder.
+
+Use `gopass env work/env -- terraform plan` for a single command with a few
+secrets: nothing stays in your shell afterwards. Use gpenv when you want many
+variables in an interactive shell, quickly, and in nushell too.
+
 ## Entry format
 
 Store the variables in a single gopass entry, e.g. `work/env`:
 
 ```text
-# Work environment: loaded with  gopass-env-load work/env
+# Work environment: loaded with  gpenv-load work/env
 JIRA_PROJECT_KEY=OPS
 JIRA_API_TOKEN=ATATT...
 GITHUB_TOKEN,GH_TOKEN=ghp_...            # one value, several names
@@ -41,50 +62,50 @@ Rules:
   escapes; everything after the first `=` is the value. One pair of matching
   surrounding quotes is removed, so `X="a b"` and `X=a b` are the same.
 - Each value is on one line.
-- `GOPASS_ENV_LOADED` is reserved. gopass-env uses it to remember which names it set.
+- `GPENV_LOADED` is reserved. gpenv uses it to remember which names it set.
 
 Edit it with `gopass edit work/env`. List the names without values with
-`gopass-env names work/env`.
+`gpenv names work/env`.
 
 ## Shell setup
 
 **bash / zsh**: in `~/.bashrc` or `~/.zshrc`:
 
 ```sh
-gopass-env-load()   { local out; out=$(command gopass-env load "$1" --shell sh) && eval "$out"; }
-gopass-env-unload() { local out; out=$(command gopass-env unload --shell sh) && eval "$out"; }
+gpenv-load()   { local out; out=$(command gpenv load "$1" --shell sh) && eval "$out"; }
+gpenv-unload() { local out; out=$(command gpenv unload --shell sh) && eval "$out"; }
 ```
 
 **nushell**: in `config.nu`:
 
 ```nu
-def --env gopass-env-load [entry: string] { gopass-env load $entry --shell nu | from json | load-env }
-def --env gopass-env-unload [] { hide-env --ignore-errors ...(gopass-env unload --shell nu | from json) }
+def --env gpenv-load [entry: string] { gpenv load $entry --shell nu | from json | load-env }
+def --env gpenv-unload [] { hide-env --ignore-errors ...(gpenv unload --shell nu | from json) }
 ```
 
 Then, in any of the three:
 
 ```sh
-gopass-env-load work/env          # export everything
-gopass-env-unload                 # remove it again
+gpenv-load work/env          # export everything
+gpenv-unload                 # remove it again
 ```
 
-A program can't change its parent shell's environment, so gopass-env prints
+A program can't change its parent shell's environment, so gpenv prints
 commands (sh) or JSON (nu), and the wrapper applies them.
 
 ## Commands
 
 | Command | Output |
 |---|---|
-| `gopass-env load ENTRY --shell sh` | `export NAME='value'` lines, plus `GOPASS_ENV_LOADED` |
-| `gopass-env load ENTRY --shell nu` | a JSON record for `from json \| load-env` |
-| `gopass-env unload --shell sh\|nu` | `unset …` / a JSON list for `hide-env` |
-| `gopass-env names ENTRY` | variable names only, one per line |
+| `gpenv load ENTRY --shell sh` | `export NAME='value'` lines, plus `GPENV_LOADED` |
+| `gpenv load ENTRY --shell nu` | a JSON record for `from json \| load-env` |
+| `gpenv unload --shell sh\|nu` | `unset …` / a JSON list for `hide-env` |
+| `gpenv names ENTRY` | variable names only, one per line |
 
-On any error, gopass-env writes **nothing** to stdout and exits 1. Errors name
+On any error, gpenv writes **nothing** to stdout and exits 1. Errors name
 the line and variable, never the value.
 
-`GOPASS_ENV_GOPASS=/path/to/gopass` overrides which gopass binary is used.
+`GPENV_GOPASS=/path/to/gopass` overrides which gopass binary is used.
 
 ## Install
 
@@ -97,20 +118,21 @@ cargo install --locked --path .          # from a checkout
 The binary is self-contained. Build it once per OS/architecture (macOS
 arm64, Linux x86_64/arm64) and copy it to `~/.local/bin` or `/usr/local/bin`.
 
-> **Formerly `genv`.** It was renamed because Homebrew's `coreutils` installs
-> GNU `env` as `genv`, which shadowed it on Intel Macs. If you used the old
-> name, delete `~/.cargo/bin/genv`, rename the wrappers to
-> `gopass-env-load` / `gopass-env-unload`, and reload any shell that still
-> has `GENV_LOADED` set.
+> **Formerly `genv`, then briefly `gopass-env`.** `genv` clashed with GNU
+> `env`, which Homebrew's `coreutils` installs as `genv`; `gopass-env` was too
+> easy to mistake for gopass's built-in `gopass env`. If you used an old name,
+> delete `~/.cargo/bin/genv` / `~/.cargo/bin/gopass-env`, rename the wrappers
+> to `gpenv-load` / `gpenv-unload`, and open a fresh shell (the old
+> `GENV_LOADED` / `GOPASS_ENV_LOADED` lists aren't read any more).
 
 ## Security
 
 - **Nothing on disk:** secrets go from the encrypted gopass store straight into your shell.
-- **Fails closed:** on any error gopass-env prints nothing, so the shell is unchanged.
+- **Fails closed:** on any error gpenv prints nothing, so the shell is unchanged.
 - **Safe to `eval`:** values are literal and single-quoted; nothing inside a value runs.
-- **Values are never printed** in errors, `gopass-env names` or debug output.
+- **Values are never printed** in errors, `gpenv names` or debug output.
 - **Not protected after loading:** every program you start inherits the
-  variables. Use `gopass-env-unload`, or a subshell for one command.
+  variables. Use `gpenv-unload`, or a subshell for one command.
 - **Not a compliance solution:** there's no access control, audit log or rotation enforcement.
 
 More: [security model](docs/why-and-security.md#security-model).
@@ -125,16 +147,16 @@ cargo clippy --all-targets -- -D warnings
 
 ## Acknowledgements
 
-gopass-env is a thin layer on top of other people's work:
+gpenv is a thin layer on top of other people's work:
 
 - **[gopass](https://github.com/gopasspw/gopass)**, the team password manager
-  that stores and syncs the secrets. gopass-env only calls `gopass show`; all the
+  that stores and syncs the secrets. gpenv only calls `gopass show`; all the
   encryption, storage, git sync and key management is gopass.
 - **[pass](https://www.passwordstore.org/)** by Jason A. Donenfeld, the
   original "standard unix password manager" that gopass builds on.
 - **[GnuPG](https://gnupg.org/)**, which does the actual decryption.
 
-gopass-env is an independent project and isn't affiliated with or endorsed by the
+gpenv is an independent project and isn't affiliated with or endorsed by the
 gopass project.
 
 ## License

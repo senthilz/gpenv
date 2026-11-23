@@ -1,31 +1,31 @@
 #![forbid(unsafe_code)]
 
-//! gopass-env: load environment variables from ONE gopass entry, with one decrypt.
+//! gpenv: load environment variables from ONE gopass entry, with one decrypt.
 //!
-//!   gopass-env load ENTRY [--shell sh|bash|zsh|nu]   print exports for the shell to evaluate
-//!   gopass-env unload [--shell sh|bash|zsh|nu]       print commands that remove them again
-//!   gopass-env names ENTRY                           list the variable names (never values)
+//!   gpenv load ENTRY [--shell sh|bash|zsh|nu]   print exports for the shell to evaluate
+//!   gpenv unload [--shell sh|bash|zsh|nu]       print commands that remove them again
+//!   gpenv names ENTRY                           list the variable names (never values)
 //!
-//! gopass-env never changes your shell itself (no program can). Your shell
+//! gpenv never changes your shell itself (no program can). Your shell
 //! evaluates its output; see README.md for the bash/zsh/nushell wrappers.
 //!
-//! On any error, gopass-env prints nothing to stdout and exits 1, so a wrapper like
-//! `out=$(gopass-env load …) && eval "$out"` loads nothing rather than half.
+//! On any error, gpenv prints nothing to stdout and exits 1, so a wrapper like
+//! `out=$(gpenv load …) && eval "$out"` loads nothing rather than half.
 
 use std::{
     io::Write,
     process::{Command, ExitCode, Stdio},
 };
 
-use gopass_env::{LOADED_VAR, Shell, merge_loaded, parse, render_load, render_unload};
+use gpenv::{LOADED_VAR, Shell, merge_loaded, parse, render_load, render_unload};
 
 const USAGE: &str = "\
 usage:
-  gopass-env load ENTRY [--shell sh|bash|zsh|nu]   print exports for your shell to evaluate
-  gopass-env unload [--shell sh|bash|zsh|nu]       print commands that remove what was loaded
-  gopass-env names ENTRY                           list the variable names in ENTRY (no values)
+  gpenv load ENTRY [--shell sh|bash|zsh|nu]   print exports for your shell to evaluate
+  gpenv unload [--shell sh|bash|zsh|nu]       print commands that remove what was loaded
+  gpenv names ENTRY                           list the variable names in ENTRY (no values)
 
-ENTRY is a gopass entry holding NAME=value lines. Set GOPASS_ENV_GOPASS to use a
+ENTRY is a gopass entry holding NAME=value lines. Set GPENV_GOPASS to use a
 different gopass binary. Shell wrappers: see README.md.";
 
 fn main() -> ExitCode {
@@ -42,7 +42,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("gopass-env: {e}");
+            eprintln!("gpenv: {e}");
             ExitCode::FAILURE
         }
     }
@@ -55,7 +55,7 @@ fn run(args: Vec<String>) -> Result<String, String> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "-h" | "--help" | "help" => return Ok(format!("{USAGE}\n")),
-            "-V" | "--version" => return Ok(format!("gopass-env {}\n", env!("CARGO_PKG_VERSION"))),
+            "-V" | "--version" => return Ok(format!("gpenv {}\n", env!("CARGO_PKG_VERSION"))),
             "--shell" | "-s" => {
                 shell = it.next().ok_or("--shell needs a value")?.parse()?;
             }
@@ -85,11 +85,11 @@ fn run(args: Vec<String>) -> Result<String, String> {
 
 /// Runs `gopass show ENTRY` once. stdin and stderr stay attached to the
 /// terminal, so a pinentry prompt (or gopass's own errors) work as usual.
-fn read_entry(entry: &str) -> Result<Vec<gopass_env::Var>, String> {
+fn read_entry(entry: &str) -> Result<Vec<gpenv::Var>, String> {
     if entry.starts_with('-') {
         return Err(format!("{entry:?} is not an entry name"));
     }
-    let gopass = std::env::var("GOPASS_ENV_GOPASS").unwrap_or_else(|_| "gopass".into());
+    let gopass = std::env::var("GPENV_GOPASS").unwrap_or_else(|_| "gopass".into());
     let out = Command::new(&gopass)
         .args(["show", "--", entry])
         .stdin(Stdio::inherit())

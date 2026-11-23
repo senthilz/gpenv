@@ -1,5 +1,5 @@
 [package]
-name = "gopass-env"
+name = "gpenv"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -8,11 +8,11 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [lib]
-name = "gopass_env"
+name = "gpenv"
 path = "src/lib.rs"
 
 [[bin]]
-name = "gopass-env"
+name = "gpenv"
 path = "src/main.rs"
 
 # Deliberately no dependencies: one small binary that builds the same on

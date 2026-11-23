@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "gopass-env"
+name = "gpenv"
 version = "0.1.0"
